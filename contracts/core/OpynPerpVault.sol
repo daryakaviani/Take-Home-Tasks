@@ -150,7 +150,7 @@ contract OpynPerpVault is ERC20, ReentrancyGuard, Ownable {
 
     function setActions(address[] memory _actions) external onlyOwner {
         require(actions.length == 0, "O3");
-        length = _actions.length;
+        uint256 length = _actions.length;
         // assign actions
         for (uint256 i = 0; i < length; i++) {
             // check all items before actions[i], does not equal to action[i]
