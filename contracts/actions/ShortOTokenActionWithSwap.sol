@@ -53,7 +53,7 @@ contract ShortOTokenActionWithSwap is IAction, AirswapBase, RollOverBase {
 
     IController public controller;
     ICurve public curve;
-    IERC20 ecrv;
+    IERC20 immutable ecrv;
     IOracle public oracle;
     IStakeDao public stakedao;
     IWETH weth;
