@@ -119,7 +119,7 @@ contract OpynPerpVault is ERC20, ReentrancyGuard, Ownable {
      * @dev can only be called if actions are initialized
      */
     function actionsInitialized() private view {
-        require(actions.length > 0, "O1");
+        require(actions.length != 0, "O1");
     }
 
     /**
@@ -219,7 +219,7 @@ contract OpynPerpVault is ERC20, ReentrancyGuard, Ownable {
     function depositETH(uint256 minEcrv) external payable nonReentrant {
         notEmergency();
         actionsInitialized();
-        require(msg.value > 0, "O6");
+        require(msg.value != 0, "O6");
 
         // the sdecrv is already deposited into the contract at this point, need to substract it from total
         uint256[2] memory amounts;
