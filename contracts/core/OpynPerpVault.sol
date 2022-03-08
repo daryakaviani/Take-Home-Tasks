@@ -80,7 +80,7 @@ contract OpynPerpVault is ERC20, ReentrancyGuard, Ownable {
     ICurve public curvePool;
 
     /// @dev ecrv lp token that is received from depositng into the curve pool
-    IERC20 ecrv;
+    IERC20 immutable ecrv;
 
     /// @dev sdecrv
     IStakeDao sdecrv;
