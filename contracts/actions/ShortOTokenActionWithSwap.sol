@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity >=0.7.2;
+pragma solidity >=0.8.2;
 pragma experimental ABIEncoderV2;
 
 import {SafeMath} from "@openzeppelin/contracts/math/SafeMath.sol";
@@ -87,10 +87,10 @@ contract ShortOTokenActionWithSwap is IAction, AirswapBase, RollOverBase {
         ecrv = stakedao.token();
 
         // enable vault to take all the stakedaoToken back and re-distribute.
-        IERC20(_stakedaoToken).safeApprove(_vault, uint256(-1));
+        IERC20(_stakedaoToken).safeApprove(_vault, type(uint256).max);
 
         // enable pool contract to pull stakedaoToken from this contract to mint options.
-        IERC20(_stakedaoToken).safeApprove(controller.pool(), uint256(-1));
+        IERC20(_stakedaoToken).safeApprove(controller.pool(), type(uint256).max);
 
         _initSwapContract(_swap);
         _initRollOverBase(_opynWhitelist);

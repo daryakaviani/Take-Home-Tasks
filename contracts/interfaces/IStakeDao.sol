@@ -2,7 +2,7 @@
 
 import { IERC20 } from '@openzeppelin/contracts/token/ERC20/IERC20.sol';
 
-pragma solidity ^0.7.2;
+pragma solidity >=0.8.2;
 pragma experimental ABIEncoderV2;
 
 interface IStakeDao {

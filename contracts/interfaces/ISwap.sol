@@ -15,7 +15,7 @@
   limitations under the License.
 */
 
-pragma solidity ^0.7.2;
+pragma solidity >=0.8.2;
 pragma experimental ABIEncoderV2;
 
 import {SwapTypes} from "../libraries/SwapTypes.sol";

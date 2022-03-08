@@ -1,5 +1,5 @@
 //SPDX-License-Identifier: MIT
-pragma solidity ^0.7.0;
+pragma solidity >=0.8.2;
 pragma experimental ABIEncoderV2;
 
 import { IAction } from "../interfaces/IAction.sol";
@@ -18,7 +18,7 @@ contract MockAction is IAction() {
   ) {
     vault = _vault;
     asset = _asset;
-    IERC20(_asset).approve(_vault, uint256(-1));
+    IERC20(_asset).approve(_vault, type(uint256).max);
   }
 
   /**
