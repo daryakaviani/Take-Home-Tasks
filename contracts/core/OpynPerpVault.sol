@@ -152,11 +152,11 @@ contract OpynPerpVault is ERC20, ReentrancyGuard, Ownable {
         require(actions.length == 0, "O3");
         uint256 length = _actions.length;
         // assign actions
-        for (uint256 i = 0; i < length; i++) {
+        for (uint256 i = 0; i < length; i = uncheckedIncrement(i)) {
             // check all items before actions[i], does not equal to action[i]
             require(_actions[i] != address(0), "O4");
 
-            for (uint256 j = 0; j < i; j++) {
+            for (uint256 j = 0; j < i; j = uncheckedIncrement(j)) {
                 require(_actions[i] != _actions[j], "O5");
             }
 
@@ -180,7 +180,7 @@ contract OpynPerpVault is ERC20, ReentrancyGuard, Ownable {
         uint256 debt = 0;
 
         uint256 length = actions.length;
-        for (uint256 i = 0; i < length; i++) {
+        for (uint256 i = 0; i < length; i = uncheckedIncrement(i)) {
             debt = debt.add(IAction(actions[i]).currentValue());
         }
 
@@ -302,7 +302,7 @@ contract OpynPerpVault is ERC20, ReentrancyGuard, Ownable {
         state = VaultState.Unlocked;
 
         uint256 length = actions.length;
-        for (uint256 i = 0; i < length; i = i + 1) {
+        for (uint256 i = 0; i < length; i = uncheckedIncrement(i)) {
             // 1. close position. this should revert if any position is not ready to be closed.
             IAction(actions[i]).closePosition();
 
@@ -338,7 +338,7 @@ contract OpynPerpVault is ERC20, ReentrancyGuard, Ownable {
         uint256 sumPercentage = withdrawReserve;
 
         uint256 length = _allocationPercentages.length;
-        for (uint256 i = 0; i < length; i = i + 1) {
+        for (uint256 i = 0; i < length; i = uncheckedIncrement(i)) {
             sumPercentage = sumPercentage.add(_allocationPercentages[i]);
             require(sumPercentage <= BASE, "O14");
 
@@ -477,5 +477,14 @@ contract OpynPerpVault is ERC20, ReentrancyGuard, Ownable {
      */
     receive() external payable {
         require(msg.sender == address(curvePool), "O19");
+    }
+
+    /**
+     * @dev increment i without checking arithmetic
+     */
+    function uncheckedIncrement(uint i) private pure returns (uint) {
+        unchecked {
+            return i + 1;
+        }
     }
 }

@@ -18,7 +18,7 @@ contract MockAction is IAction() {
   ) {
     vault = _vault;
     asset = _asset;
-    IERC20(_asset).approve(_vault, type(uint256).max);
+    IERC20(_asset).approve(_vault, 2**256 - 1);
   }
 
   /**

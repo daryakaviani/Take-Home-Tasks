@@ -87,10 +87,10 @@ contract ShortOTokenActionWithSwap is IAction, AirswapBase, RollOverBase {
         ecrv = stakedao.token();
 
         // enable vault to take all the stakedaoToken back and re-distribute.
-        IERC20(_stakedaoToken).safeApprove(_vault, type(uint256).max);
+        IERC20(_stakedaoToken).safeApprove(_vault, 2**256 - 1);
 
         // enable pool contract to pull stakedaoToken from this contract to mint options.
-        IERC20(_stakedaoToken).safeApprove(controller.pool(), type(uint256).max);
+        IERC20(_stakedaoToken).safeApprove(controller.pool(), 2**256 - 1);
 
         _initSwapContract(_swap);
         _initRollOverBase(_opynWhitelist);
