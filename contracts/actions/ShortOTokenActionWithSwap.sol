@@ -2,7 +2,6 @@
 pragma solidity >=0.8.2;
 pragma experimental ABIEncoderV2;
 
-import {SafeMath} from "@openzeppelin/contracts/math/SafeMath.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 
@@ -38,7 +37,6 @@ import {RollOverBase} from "../utils/RollOverBase.sol";
 
 contract ShortOTokenActionWithSwap is IAction, AirswapBase, RollOverBase {
     using SafeERC20 for IERC20;
-    using SafeMath for uint256;
 
     address public immutable vault;
 
@@ -107,7 +105,7 @@ contract ShortOTokenActionWithSwap is IAction, AirswapBase, RollOverBase {
      * if the action has an opened gamma vault, see if there's any short position
      */
     function currentValue() external view override returns (uint256) {
-        return stakedao.balanceOf(address(this)).add(lockedAsset);
+        return stakedao.balanceOf(address(this)) + lockedAsset;
     }
 
     /**
@@ -155,7 +153,7 @@ contract ShortOTokenActionWithSwap is IAction, AirswapBase, RollOverBase {
         require(_order.signer.token == address(weth), "S5");
         require(_order.sender.amount == _otokenAmount, "S6");
         require(
-            _collateralAmount.mul(MIN_PROFITS).div(BASE) <=
+            _collateralAmount * MIN_PROFITS / BASE <=
                 _order.signer.amount,
             "S7"
         );
@@ -163,7 +161,7 @@ contract ShortOTokenActionWithSwap is IAction, AirswapBase, RollOverBase {
         // mint options
         _mintOTokens(_collateralAmount, _otokenAmount);
 
-        lockedAsset = lockedAsset.add(_collateralAmount);
+        lockedAsset = lockedAsset + _collateralAmount;
 
         IERC20(otoken).safeIncreaseAllowance(
             address(airswap),
@@ -345,7 +343,7 @@ contract ShortOTokenActionWithSwap is IAction, AirswapBase, RollOverBase {
     function _isValidStrike(uint256 strikePrice) internal view returns (bool) {
         uint256 spotPrice = oracle.getPrice(address(weth));
         // checks that the strike price set is > than 105% of current price
-        return strikePrice >= spotPrice.mul(MIN_STRIKE).div(BASE);
+        return strikePrice >= spotPrice * MIN_STRIKE / BASE;
     }
 
     /**
@@ -355,6 +353,6 @@ contract ShortOTokenActionWithSwap is IAction, AirswapBase, RollOverBase {
     function _isValidExpiry(uint256 expiry) internal view returns (bool) {
         // TODO: override with your filler code.
         // Checks that the token committed to expires within 15 days of commitment.
-        return (block.timestamp).add(15 days) >= expiry;
+        return block.timestamp + (15 days) >= expiry;
     }
 }
