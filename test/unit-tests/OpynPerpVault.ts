@@ -1,16 +1,23 @@
-import { ethers } from 'hardhat';
-import { utils } from 'ethers';
-import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
-import { expect } from 'chai';
-import { MockAction, MockERC20, OpynPerpVault, MockWETH, MockStakedao, MockCurve } from '../../typechain';
+import { ethers } from "hardhat";
+import { utils } from "ethers";
+import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
+import { expect } from "chai";
+import {
+  MockAction,
+  MockERC20,
+  OpynPerpVault,
+  MockWETH,
+  MockStakedao,
+  MockCurve,
+} from "../../typechain";
 
 enum VaultState {
   Emergency,
   Locked,
-  Unlocked
+  Unlocked,
 }
 
-describe('OpynPerpVault Tests', function () {
+describe("OpynPerpVault Tests", function () {
   let action1: MockAction;
   let action2: MockAction;
   // asset used by this action: in this case, weth
@@ -29,9 +36,10 @@ describe('OpynPerpVault Tests', function () {
   let feeRecipient: SignerWithAddress;
   let vault: OpynPerpVault;
 
-  this.beforeAll('Set accounts', async () => {
+  this.beforeAll("Set accounts", async () => {
     accounts = await ethers.getSigners();
-    const [_owner, _feeRecipient, _depositor1, _depositor2, _depositor3] = accounts;
+    const [_owner, _feeRecipient, _depositor1, _depositor2, _depositor3] =
+      accounts;
 
     owner = _owner;
     feeRecipient = _feeRecipient;
@@ -41,192 +49,246 @@ describe('OpynPerpVault Tests', function () {
     depositor3 = _depositor3;
   });
 
-  this.beforeAll('Deploy Mock contracts', async () => {
-    const MockWETHContract = await ethers.getContractFactory('MockWETH');
+  this.beforeAll("Deploy Mock contracts", async () => {
+    const MockWETHContract = await ethers.getContractFactory("MockWETH");
     weth = (await MockWETHContract.deploy()) as MockWETH;
-    await weth.init('WETH', 'WETH', 18);
+    await weth.init("WETH", "WETH", 18);
 
-    const ERC20 = await ethers.getContractFactory('MockERC20');
+    const ERC20 = await ethers.getContractFactory("MockERC20");
     usdc = (await ERC20.deploy()) as MockERC20;
-    await usdc.init('USDC', 'USDC', 6);
+    await usdc.init("USDC", "USDC", 6);
 
     ecrv = (await ERC20.deploy()) as MockERC20;
-    await ecrv.init('ecrv', 'ecrv', 18);
+    await ecrv.init("ecrv", "ecrv", 18);
 
-    const Curve = await ethers.getContractFactory('MockCurve');
+    const Curve = await ethers.getContractFactory("MockCurve");
     curve = (await Curve.deploy(ecrv.address)) as MockCurve;
 
-    const StakeDao = await ethers.getContractFactory('MockStakedao');
+    const StakeDao = await ethers.getContractFactory("MockStakedao");
     sdecrv = (await StakeDao.deploy()) as MockStakedao;
-    await sdecrv.init('ecrv', 'ecrv', 18, ecrv.address);
+    await sdecrv.init("ecrv", "ecrv", 18, ecrv.address);
   });
 
-  this.beforeAll('Deploy vault and mock actions', async () => {
-    const VaultContract = await ethers.getContractFactory('OpynPerpVault');
+  this.beforeAll("Deploy vault and mock actions", async () => {
+    const VaultContract = await ethers.getContractFactory("OpynPerpVault");
     vault = (await VaultContract.deploy(
       sdecrv.address,
       curve.address,
       feeRecipient.address,
-      'OpynPerpShortVault share',
-      'sOPS'
+      "OpynPerpShortVault share",
+      "sOPS"
     )) as OpynPerpVault;
 
     // deploy 2 mock actions
-    const MockActionContract = await ethers.getContractFactory('MockAction');
-    action1 = await MockActionContract.deploy(vault.address, sdecrv.address) as MockAction;
-    action2 = await MockActionContract.deploy(vault.address, sdecrv.address) as MockAction;
+    const MockActionContract = await ethers.getContractFactory("MockAction");
+    action1 = (await MockActionContract.deploy(
+      vault.address,
+      sdecrv.address
+    )) as MockAction;
+    action2 = (await MockActionContract.deploy(
+      vault.address,
+      sdecrv.address
+    )) as MockAction;
   });
 
-  describe('init', async () => {
-    it('should revert when trying to call setActions with duplicated actions', async() => {
+  describe("init", async () => {
+    it("should revert when trying to call setActions with duplicated actions", async () => {
       await expect(
         vault
-        .connect(owner)
-        .setActions(
-          [action1.address, action2.address, action2.address]
-        )
-      ).to.be.revertedWith('O5');
-      
-      await expect(
-        vault
-        .connect(owner)
-        .setActions(
-          [action1.address, action2.address, action1.address]
-        )
-      ).to.be.revertedWith('O5');
-      
-    })
+          .connect(owner)
+          .setActions([action1.address, action2.address, action2.address])
+      ).to.be.revertedWith("DuplicateAction");
 
-    it('should revert when trying to set action address 0', async() => {
       await expect(
         vault
-        .connect(owner)
-        .setActions(
-          ['0x0000000000000000000000000000000000000000']
-        )
-      ).to.be.revertedWith('O4');
-    })
-
-    it('should not be able to deposit, withdraw, rollover or closePosition before actions are set', async() => {
-      await expect(vault.connect(depositor1).depositETH('1', { value: '1' })).to.be.revertedWith('O1');
-      await expect(vault.connect(depositor1).withdrawETH('1', '1')).to.be.revertedWith('O1');
-      await expect(vault.connect(owner).rollOver([4000, 5000])).to.be.revertedWith('O1');
-      await expect(vault.connect(owner).closePositions()).to.be.revertedWith('O1');
-    })
-    
-    it('should init the contract successfully', async () => {
-      await vault
-        .connect(owner)
-        .setActions(
-          [action1.address, action2.address]
-        );
-      // init state
-      expect((await vault.state()) === VaultState.Unlocked).to.be.true;
-      expect((await vault.totalStakedaoAsset()).isZero(), 'total asset should be zero').to.be.true;
-      expect((await vault.totalETHControlled()).isZero(), 'total ETH controlled should be 0').to.be.true;
+          .connect(owner)
+          .setActions([action1.address, action2.address, action1.address])
+      ).to.be.revertedWith("DuplicateAction");
     });
 
-    it('should set fee reserve', async () => {
+    it("should revert when trying to set action address 0", async () => {
+      await expect(
+        vault
+          .connect(owner)
+          .setActions(["0x0000000000000000000000000000000000000000"])
+      ).to.be.revertedWith("InvalidAddress");
+    });
+
+    it("should not be able to deposit, withdraw, rollover or closePosition before actions are set", async () => {
+      await expect(
+        vault.connect(depositor1).depositETH("1", { value: "1" })
+      ).to.be.revertedWith("NoActionInitialized");
+      await expect(
+        vault.connect(depositor1).withdrawETH("1", "1")
+      ).to.be.revertedWith("NoActionInitialized");
+      await expect(
+        vault.connect(owner).rollOver([4000, 5000])
+      ).to.be.revertedWith("NoActionInitialized");
+      await expect(vault.connect(owner).closePositions()).to.be.revertedWith(
+        "NoActionInitialized"
+      );
+    });
+
+    it("should init the contract successfully", async () => {
+      await vault.connect(owner).setActions([action1.address, action2.address]);
+      // init state
+      expect((await vault.state()) === VaultState.Unlocked).to.be.true;
+      expect(
+        (await vault.totalStakedaoAsset()).isZero(),
+        "total asset should be zero"
+      ).to.be.true;
+      expect(
+        (await vault.totalETHControlled()).isZero(),
+        "total ETH controlled should be 0"
+      ).to.be.true;
+    });
+
+    it("should set fee reserve", async () => {
       await expect(
         vault.connect(owner).setWithdrawReserve(6000)
-      ).to.be.revertedWith('O16');
+      ).to.be.revertedWith("WithdrawReserve");
 
       await vault.connect(owner).setWithdrawReserve(1000);
       expect((await vault.withdrawReserve()).toNumber() == 1000).to.be.true;
     });
 
-    it('should revert an addrress other than curve tries to send ETH to the vault', async () => {
+    it("should revert an addrress other than curve tries to send ETH to the vault", async () => {
       // Note that anyone can still force send ETH
       await expect(
-        depositor1.sendTransaction({ to: vault.address, value: utils.parseUnits('1') })
-      ).to.be.revertedWith('O19');
+        depositor1.sendTransaction({
+          to: vault.address,
+          value: utils.parseUnits("1"),
+        })
+      ).to.be.revertedWith("NoncurvePool");
     });
 
-    it('should fail to set actions once the contract is already initialized', async () => {
-      await expect(vault
-        .connect(owner)
-        .setActions(
-          [action1.address, action2.address, action1.address]
-        )).to.be.revertedWith('O3');
+    it("should fail to set actions once the contract is already initialized", async () => {
+      await expect(
+        vault
+          .connect(owner)
+          .setActions([action1.address, action2.address, action1.address])
+      ).to.be.revertedWith("ActionsInitialized");
     });
   });
 
-  describe('genesis: before first cycle start', async () => {
-    const depositAmount = utils.parseUnits('10');
+  describe("genesis: before first cycle start", async () => {
+    const depositAmount = utils.parseUnits("10");
 
-    it('should revert if calling depositETH with no value', async () => {
-      await expect(vault.connect(depositor1).depositETH(depositAmount)).to.be.revertedWith('O6');
+    it("should revert if calling depositETH with no value", async () => {
+      await expect(
+        vault.connect(depositor1).depositETH(depositAmount)
+      ).to.be.revertedWith("EmptyDeposit");
     });
-    it('p1 deposits ETH', async () => {
-
-      const shares1Before = await vault.balanceOf(depositor1.address)
-      const expectedShares = await vault.getSharesByDepositAmount(depositAmount)
+    it("p1 deposits ETH", async () => {
+      const shares1Before = await vault.balanceOf(depositor1.address);
+      const expectedShares = await vault.getSharesByDepositAmount(
+        depositAmount
+      );
       const vaultTotalBefore = await vault.totalStakedaoAsset();
       const vaultBalanceBefore = await sdecrv.balanceOf(vault.address);
 
       // depositor 1 deposit 10 eth
-      await vault.connect(depositor1).depositETH(depositAmount, { value: depositAmount });
+      await vault
+        .connect(depositor1)
+        .depositETH(depositAmount, { value: depositAmount });
 
       const vaultTotalAfter = await vault.totalStakedaoAsset();
       const vaultBalanceAfter = await sdecrv.balanceOf(vault.address);
 
-      expect(vaultTotalAfter.eq(vaultTotalBefore.add(depositAmount)), 'total stakedao asset should update').to.be.true;
-      expect((await vault.totalETHControlled()).eq(vaultTotalAfter), 'total eth controlled should update').to.be.true;
-      expect(vaultBalanceAfter.eq(vaultBalanceBefore.add(depositAmount)), 'actual stakedao balance should update').to.be.true;
+      expect(
+        vaultTotalAfter.eq(vaultTotalBefore.add(depositAmount)),
+        "total stakedao asset should update"
+      ).to.be.true;
+      expect(
+        (await vault.totalETHControlled()).eq(vaultTotalAfter),
+        "total eth controlled should update"
+      ).to.be.true;
+      expect(
+        vaultBalanceAfter.eq(vaultBalanceBefore.add(depositAmount)),
+        "actual stakedao balance should update"
+      ).to.be.true;
 
-      const shares1After = await vault.balanceOf(depositor1.address)
-      expect(shares1After.sub(shares1Before).eq(expectedShares)).to.be.true
+      const shares1After = await vault.balanceOf(depositor1.address);
+      expect(shares1After.sub(shares1Before).eq(expectedShares)).to.be.true;
       expect(expectedShares).to.be.equal(depositAmount);
     });
 
-    it('p1 deposits more ETH', async () => {
-      const shares1Before = await vault.balanceOf(depositor1.address)
-      const expectedShares = await vault.getSharesByDepositAmount(depositAmount)
+    it("p1 deposits more ETH", async () => {
+      const shares1Before = await vault.balanceOf(depositor1.address);
+      const expectedShares = await vault.getSharesByDepositAmount(
+        depositAmount
+      );
       const vaultTotalBefore = await vault.totalStakedaoAsset();
       const vaultBalanceBefore = await sdecrv.balanceOf(vault.address);
 
       // depositor 1 deposit 10 eth
-      await vault.connect(depositor1).depositETH(depositAmount, { value: depositAmount });
+      await vault
+        .connect(depositor1)
+        .depositETH(depositAmount, { value: depositAmount });
 
       const vaultTotalAfter = await vault.totalStakedaoAsset();
       const vaultBalanceAfter = await sdecrv.balanceOf(vault.address);
 
-      expect(vaultTotalAfter.eq(vaultTotalBefore.add(depositAmount)), 'total stakedao asset should update').to.be.true;
-      expect((await vault.totalETHControlled()).eq(vaultTotalAfter), 'total eth controlled should update').to.be.true;
-      expect(vaultBalanceAfter.eq(vaultBalanceBefore.add(depositAmount)), 'actual stakedao balance should update').to.be.true;
+      expect(
+        vaultTotalAfter.eq(vaultTotalBefore.add(depositAmount)),
+        "total stakedao asset should update"
+      ).to.be.true;
+      expect(
+        (await vault.totalETHControlled()).eq(vaultTotalAfter),
+        "total eth controlled should update"
+      ).to.be.true;
+      expect(
+        vaultBalanceAfter.eq(vaultBalanceBefore.add(depositAmount)),
+        "actual stakedao balance should update"
+      ).to.be.true;
 
-      const shares1After = await vault.balanceOf(depositor1.address)
-      expect(shares1After.sub(shares1Before).eq(expectedShares)).to.be.true
+      const shares1After = await vault.balanceOf(depositor1.address);
+      expect(shares1After.sub(shares1Before).eq(expectedShares)).to.be.true;
       expect(expectedShares).to.be.equal(depositAmount);
     });
 
-    it('p2 deposits', async() => {
-      const shares2Before = await vault.balanceOf(depositor2.address)
-      const expectedShares = await vault.getSharesByDepositAmount(depositAmount)
+    it("p2 deposits", async () => {
+      const shares2Before = await vault.balanceOf(depositor2.address);
+      const expectedShares = await vault.getSharesByDepositAmount(
+        depositAmount
+      );
       const vaultTotalBefore = await vault.totalStakedaoAsset();
       const vaultBalanceBefore = await sdecrv.balanceOf(vault.address);
 
       // depositor 2 deposit 10 eth
-      await vault.connect(depositor2).depositETH(depositAmount, { value: depositAmount });
+      await vault
+        .connect(depositor2)
+        .depositETH(depositAmount, { value: depositAmount });
 
       const vaultTotalAfter = await vault.totalStakedaoAsset();
       const vaultBalanceAfter = await sdecrv.balanceOf(vault.address);
 
-      expect(vaultTotalAfter.eq(vaultTotalBefore.add(depositAmount)), 'total stakedao asset should update').to.be.true;
-      expect((await vault.totalETHControlled()).eq(vaultTotalAfter), 'total eth controlled should update').to.be.true;
-      expect(vaultBalanceAfter.eq(vaultBalanceBefore.add(depositAmount)), 'actual stakedao balance should update').to.be.true;
+      expect(
+        vaultTotalAfter.eq(vaultTotalBefore.add(depositAmount)),
+        "total stakedao asset should update"
+      ).to.be.true;
+      expect(
+        (await vault.totalETHControlled()).eq(vaultTotalAfter),
+        "total eth controlled should update"
+      ).to.be.true;
+      expect(
+        vaultBalanceAfter.eq(vaultBalanceBefore.add(depositAmount)),
+        "actual stakedao balance should update"
+      ).to.be.true;
 
-      const shares2After = await vault.balanceOf(depositor2.address)
-      expect(shares2After.sub(shares2Before).eq(expectedShares)).to.be.true
+      const shares2After = await vault.balanceOf(depositor2.address);
+      expect(shares2After.sub(shares2Before).eq(expectedShares)).to.be.true;
       expect(expectedShares).to.be.equal(depositAmount);
-    })
-
-    it('p3 should not be able to withdraw if they havent deposited', async () => {
-      // depositor 3 withdraws 10 eth
-      await expect(vault.connect(depositor3).withdrawETH(depositAmount, depositAmount)).to.be.revertedWith('ERC20: burn amount exceeds balance');
     });
 
-    it('p1 should be able to withdraw ETH', async () => {
+    it("p3 should not be able to withdraw if they havent deposited", async () => {
+      // depositor 3 withdraws 10 eth
+      await expect(
+        vault.connect(depositor3).withdrawETH(depositAmount, depositAmount)
+      ).to.be.revertedWith("ERC20: burn amount exceeds balance");
+    });
+
+    it("p1 should be able to withdraw ETH", async () => {
       const shares1Before = await vault.balanceOf(depositor1.address);
       const vaultTotalBefore = await vault.totalStakedaoAsset();
       const vaultBalanceBefore = await sdecrv.balanceOf(vault.address);
@@ -234,32 +296,41 @@ describe('OpynPerpVault Tests', function () {
       // depositor 1 withdraws 10 eth
       await vault.connect(depositor1).withdrawETH(depositAmount, depositAmount);
 
-      const shares1After = await vault.balanceOf(depositor1.address)
+      const shares1After = await vault.balanceOf(depositor1.address);
       const vaultTotalAfter = await vault.totalStakedaoAsset();
       const vaultBalanceAfter = await sdecrv.balanceOf(vault.address);
 
       expect(shares1Before.sub(shares1After)).to.be.equal(depositAmount);
-      expect(vaultBalanceBefore.sub(vaultBalanceAfter)).to.be.equal(depositAmount);
+      expect(vaultBalanceBefore.sub(vaultBalanceAfter)).to.be.equal(
+        depositAmount
+      );
       expect(vaultTotalBefore.sub(vaultTotalAfter)).to.be.equal(depositAmount);
-      expect((await vault.totalETHControlled()).eq(vaultTotalAfter), 'total eth controlled should update').to.be.true;
+      expect(
+        (await vault.totalETHControlled()).eq(vaultTotalAfter),
+        "total eth controlled should update"
+      ).to.be.true;
     });
 
-    it('should revert when calling closePosition', async () => {
-      await expect(vault.connect(owner).closePositions()).to.be.revertedWith('O11');
-    });
-
-    it('should revert if rollover is called with total percentage > 100', async () => {
-      // max percentage sum should be 90% (9000) because 10% is set for reserve
-      await expect(vault.connect(owner).rollOver([5000, 5000])).to.be.revertedWith(
-        'O14'
+    it("should revert when calling closePosition", async () => {
+      await expect(vault.connect(owner).closePositions()).to.be.revertedWith(
+        "VaultUnlocked"
       );
     });
 
-    it('should revert if rollover is called with invalid percentage array', async () => {
-      await expect(vault.connect(owner).rollOver([5000])).to.be.revertedWith('O12');
+    it("should revert if rollover is called with total percentage > 100", async () => {
+      // max percentage sum should be 90% (9000) because 10% is set for reserve
+      await expect(
+        vault.connect(owner).rollOver([5000, 5000])
+      ).to.be.revertedWith("SumExceedsBase");
     });
 
-    it('should rollover to the next round', async () => {
+    it("should revert if rollover is called with invalid percentage array", async () => {
+      await expect(vault.connect(owner).rollOver([5000])).to.be.revertedWith(
+        "InconsistentAllocPercent"
+      );
+    });
+
+    it("should rollover to the next round", async () => {
       const vaultBalanceBefore = await sdecrv.balanceOf(vault.address);
       const action1BalanceBefore = await sdecrv.balanceOf(action1.address);
       const action2BalanceBefore = await sdecrv.balanceOf(action2.address);
@@ -273,23 +344,37 @@ describe('OpynPerpVault Tests', function () {
       const vaultBalanceAfter = await sdecrv.balanceOf(vault.address);
       const action1BalanceAfter = await sdecrv.balanceOf(action1.address);
       const action2BalanceAfter = await sdecrv.balanceOf(action2.address);
-      const totalValueAfter =  await vault.totalStakedaoAsset();
+      const totalValueAfter = await vault.totalStakedaoAsset();
 
-      expect(action1BalanceAfter.sub(action1BalanceBefore).eq(vaultBalanceBefore.mul(4).div(10))).to
-        .be.true;
-      expect(action2BalanceAfter.sub(action2BalanceBefore).eq(vaultBalanceBefore.mul(5).div(10))).to
-        .be.true;
+      expect(
+        action1BalanceAfter
+          .sub(action1BalanceBefore)
+          .eq(vaultBalanceBefore.mul(4).div(10))
+      ).to.be.true;
+      expect(
+        action2BalanceAfter
+          .sub(action2BalanceBefore)
+          .eq(vaultBalanceBefore.mul(5).div(10))
+      ).to.be.true;
 
       expect(vaultBalanceAfter.eq(vaultBalanceBefore.div(10))).to.be.true;
 
-      expect(totalValueAfter.eq(totalValueBefore), 'total value should stay uneffected').to.be.true;
-      expect((await vault.totalETHControlled()).eq(totalValueAfter), 'total eth controlled should update').to.be.true;
+      expect(
+        totalValueAfter.eq(totalValueBefore),
+        "total value should stay uneffected"
+      ).to.be.true;
+      expect(
+        (await vault.totalETHControlled()).eq(totalValueAfter),
+        "total eth controlled should update"
+      ).to.be.true;
 
       expect((await vault.state()) === VaultState.Locked).to.be.true;
     });
 
-    it('should revert when trying to call rollover again', async () => {
-      await expect(vault.connect(owner).rollOver([7000, 2000])).to.be.revertedWith('O13');
+    it("should revert when trying to call rollover again", async () => {
+      await expect(
+        vault.connect(owner).rollOver([7000, 2000])
+      ).to.be.revertedWith("VaultLocked");
     });
 
     // it('should revert when trying to withdraw full amount', async () => {

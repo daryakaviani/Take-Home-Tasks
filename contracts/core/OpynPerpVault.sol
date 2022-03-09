@@ -13,29 +13,6 @@ import {ICurve} from "../interfaces/ICurve.sol";
 import {IStakeDao} from "../interfaces/IStakeDao.sol";
 
 /**
- * Error Codes
- * O1: actions for the vault have not been initialized
- * O2: cannot execute transaction, vault is in emergency state
- * O3: cannot call setActions, actions have already been initialized
- * O4: action being set is using an invalid address
- * O5: action being set is a duplicated action
- * O6: deposited ETH (msg.value) must be greater than 0
- * O7: cannot accept ETH deposit, total sdecrv controlled by the vault would exceed vault cap
- * O8: unable to withdraw ETH, sdecrv to withdraw would exceed or be equal to the current vault sdecrv balance
- * O9: unable to withdraw ETH, ETH fee transfer to fee recipient (feeRecipient) failed
- * O10: unable to withdraw ETH, ETH withdrawal to user (msg.sender) failed
- * O11: cannot close vault positions, vault is not in locked state (VaultState.Locked)
- * O12: unable to rollover vault, length of allocation percentages (_allocationPercentages) passed is not equal to the initialized actions length
- * O13: unable to rollover vault, vault is not in unlocked state (VaultState.Unlocked)
- * O14: unable to rollover vault, the calculated percentage sum (sumPercentage) is greater than the base (BASE)
- * O15: unable to rollover vault, the calculated percentage sum (sumPercentage) is not equal to the base (BASE)
- * O16: withdraw reserve percentage must be less than 50% (5000)
- * O17: cannot call emergencyPause, vault is already in emergency state
- * O18: cannot call resumeFromPause, vault is not in emergency state
- * O19: cannot receive ETH from any address other than the curve pool address (curvePool)
- */
-
-/**
  * @title OpynPerpVault
  * @author Opyn Team
  * @dev implementation of the Opyn Perp Vault contract that works with stakedao's ETH strategy.
@@ -110,6 +87,49 @@ contract OpynPerpVault is ERC20, ReentrancyGuard, Ownable {
     );
 
     /*=====================
+     *       Errors       *
+     *====================*/
+
+    // 01: actions for the vault have not been initialized
+    error NoActionInitialized();
+    // O2: cannot execute transaction, vault is in emergency state
+    error EmergencyState();
+    // O3: cannot call setActions, actions have already been initialized
+    error ActionsInitialized();
+    // O4: action being set is using an invalid address
+    error InvalidAddress();
+    // O5: action being set is a duplicated action
+    error DuplicateAction();
+    // O6: deposited ETH (msg.value) must be greater than 0
+    error EmptyDeposit();
+    // O7: cannot accept ETH deposit, total sdecrv controlled by the vault would exceed vault cap
+    error ExceedVaultCap();
+    // O8: unable to withdraw ETH, sdecrv to withdraw would exceed or be equal to the current vault sdecrv balance
+    error ReachVaultBalance();
+    // O9: unable to withdraw ETH, ETH fee transfer to fee recipient (feeRecipient) failed
+    error FeeTransferFailed();
+    // O10: unable to withdraw ETH, ETH withdrawal to user (msg.sender) failed
+    error FailedUserWithdrawal();
+    // O11: cannot close vault positions, vault is not in locked state (VaultState.Locked)
+    error VaultUnlocked();
+    // O12: unable to rollover vault, length of allocation percentages (_allocationPercentages) passed is not equal to the initialized actions length
+    error InconsistentAllocPercent();
+    // O13: unable to rollover vault, vault is not in unlocked state (VaultState.Unlocked)
+    error VaultLocked();
+    // O14: unable to rollover vault, the calculated percentage sum (sumPercentage) is greater than the base (BASE)
+    error SumExceedsBase();
+    // O15: unable to rollover vault, the calculated percentage sum (sumPercentage) is not equal to the base (BASE)
+    error SumNotBase();
+    // O16: withdraw reserve percentage must be less than 50% (5000)
+    error WithdrawReserve();
+    // O17: cannot call emergencyPause, vault is already in emergency state
+    error InEmergency();
+    // O18: cannot call resumeFromPause, vault is not in emergency state
+    error NotInEmergency();
+    // O19: cannot receive ETH from any address other than the curve pool address (curvePool)
+    error NoncurvePool();
+
+    /*=====================
      *     Modifiers      *
      *====================*/
 
@@ -117,14 +137,18 @@ contract OpynPerpVault is ERC20, ReentrancyGuard, Ownable {
      * @dev can only be called if actions are initialized
      */
     function actionsInitialized() private view {
-        require(actions.length != 0, "O1");
+        if (actions.length == 0) {
+            revert NoActionInitialized();
+        }
     }
 
     /**
      * @dev can only be executed if vault is not in emergency state
      */
     function notEmergency() private view {
-        require(state != VaultState.Emergency, "O2");
+        if (state == VaultState.Emergency) {
+            revert EmergencyState();
+        }
     }
 
     /*=====================
@@ -147,15 +171,21 @@ contract OpynPerpVault is ERC20, ReentrancyGuard, Ownable {
     }
 
     function setActions(address[] memory _actions) external onlyOwner {
-        require(actions.length == 0, "O3");
+        if (actions.length != 0) {
+            revert ActionsInitialized();
+        }
         uint256 length = _actions.length;
         // assign actions
         for (uint256 i = 0; i < length; i = uncheckedIncrement(i)) {
             // check all items before actions[i], does not equal to action[i]
-            require(_actions[i] != address(0), "O4");
+            if (_actions[i] == address(0)) {
+                revert InvalidAddress();
+            }
 
             for (uint256 j = 0; j < i; j = uncheckedIncrement(j)) {
-                require(_actions[i] != _actions[j], "O5");
+                if (_actions[i] == _actions[j]) {
+                    revert DuplicateAction();
+                }
             }
 
             actions.push(_actions[i]);
@@ -213,7 +243,9 @@ contract OpynPerpVault is ERC20, ReentrancyGuard, Ownable {
     function depositETH(uint256 minEcrv) external payable nonReentrant {
         notEmergency();
         actionsInitialized();
-        require(msg.value != 0, "O6");
+        if (msg.value == 0) {
+            revert EmptyDeposit();
+        }
 
         // the sdecrv is already deposited into the contract at this point, need to substract it from total
         uint256[2] memory amounts;
@@ -234,7 +266,9 @@ contract OpynPerpVault is ERC20, ReentrancyGuard, Ownable {
 
         // mint shares and emit event
         uint256 totalWithDepositedAmount = totalStakedaoAsset();
-        require(totalWithDepositedAmount < cap, "O7");
+        if (totalWithDepositedAmount >= cap) {
+            revert ExceedVaultCap();
+        }
         uint256 sdecrvDeposited = totalWithDepositedAmount - totalSdecrvBalanceBeforeDeposit;
         uint256 share = _getSharesByDepositAmount(
             sdecrvDeposited,
@@ -256,7 +290,9 @@ contract OpynPerpVault is ERC20, ReentrancyGuard, Ownable {
         actionsInitialized();
         uint256 currentSdecrvBalance = _balance();
         uint256 sdecrvToWithdraw = _getWithdrawAmountByShares(_share);
-        require(sdecrvToWithdraw <= currentSdecrvBalance, "O8");
+        if (sdecrvToWithdraw > currentSdecrvBalance) {
+            revert ReachVaultBalance();
+        }
 
         _burn(msg.sender, _share);
 
@@ -275,11 +311,15 @@ contract OpynPerpVault is ERC20, ReentrancyGuard, Ownable {
 
         // send fee to recipient
         (bool success1, ) = feeRecipient.call{value: fee}("");
-        require(success1, "O9");
+        if (!success1) {
+            revert FeeTransferFailed();
+        }
 
         // send ETH to user
         (bool success2, ) = msg.sender.call{value: ethOwedToUser}("");
-        require(success2, "O10");
+        if (!success2) {
+            revert FailedUserWithdrawal();
+        }
 
         emit Withdraw(msg.sender, ethOwedToUser, fee, _share);
     }
@@ -290,7 +330,9 @@ contract OpynPerpVault is ERC20, ReentrancyGuard, Ownable {
      */
     function closePositions() public {
         actionsInitialized();
-        require(state == VaultState.Locked, "O11");
+        if (state != VaultState.Locked) {
+            revert VaultUnlocked();
+        }   
         state = VaultState.Unlocked;
 
         uint256 length = actions.length;
@@ -321,8 +363,12 @@ contract OpynPerpVault is ERC20, ReentrancyGuard, Ownable {
         nonReentrant
     {
         actionsInitialized();
-        require(_allocationPercentages.length == actions.length, "O12");
-        require(state == VaultState.Unlocked, "O13");
+        if (_allocationPercentages.length != actions.length) {
+            revert InconsistentAllocPercent();
+        }
+        if (state != VaultState.Unlocked) {
+            revert VaultLocked();
+        }
         state = VaultState.Locked;
 
         uint256 totalAsset = totalStakedaoAsset();
@@ -332,7 +378,9 @@ contract OpynPerpVault is ERC20, ReentrancyGuard, Ownable {
         uint256 length = _allocationPercentages.length;
         for (uint256 i = 0; i < length; i = uncheckedIncrement(i)) {
             sumPercentage = sumPercentage + _allocationPercentages[i];
-            require(sumPercentage <= BASE, "O14");
+            if (sumPercentage > BASE) {
+                revert SumExceedsBase();
+            }
 
             uint256 newAmount = totalAsset * _allocationPercentages[i] / BASE;
 
@@ -341,7 +389,9 @@ contract OpynPerpVault is ERC20, ReentrancyGuard, Ownable {
             IAction(actions[i]).rolloverPosition();
         }
 
-        require(sumPercentage == BASE, "O15");
+        if (sumPercentage != BASE) {
+            revert SumNotBase();
+        }
 
         emit Rollover(_allocationPercentages);
         emit StateUpdated(VaultState.Locked);
@@ -371,7 +421,9 @@ contract OpynPerpVault is ERC20, ReentrancyGuard, Ownable {
      * @dev set the percentage that should be reserved in vault for withdraw
      */
     function setWithdrawReserve(uint256 _reserve) external onlyOwner {
-        require(_reserve < 5000, "O16");
+        if (_reserve >= 5000) {
+            revert WithdrawReserve();
+        }
         withdrawReserve = _reserve;
     }
 
@@ -379,7 +431,9 @@ contract OpynPerpVault is ERC20, ReentrancyGuard, Ownable {
      * @dev set the state to "Emergency", which disable all withdraw and deposit
      */
     function emergencyPause() external onlyOwner {
-        require(state != VaultState.Emergency, "O17");
+        if (state == VaultState.Emergency) {
+            revert InEmergency();
+        }
 
         stateBeforePause = state;
         state = VaultState.Emergency;
@@ -391,7 +445,9 @@ contract OpynPerpVault is ERC20, ReentrancyGuard, Ownable {
      * @dev set the state from "Emergency", which disable all withdraw and deposit
      */
     function resumeFromPause() external onlyOwner {
-        require(state == VaultState.Emergency, "O18");
+        if (state != VaultState.Emergency) {
+            revert NotInEmergency();
+        }
 
         state = stateBeforePause;
 
@@ -466,7 +522,9 @@ contract OpynPerpVault is ERC20, ReentrancyGuard, Ownable {
      * @notice the receive ether function is called whenever the call data is empty
      */
     receive() external payable {
-        require(msg.sender == address(curvePool), "O19");
+        if (msg.sender != address(curvePool)) {
+            revert NoncurvePool();
+        }
     }
 
     /**
