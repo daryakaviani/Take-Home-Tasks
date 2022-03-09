@@ -37,8 +37,6 @@ npm run test
 
 # OPTIMIZATIONS
 
-# Optimizations
-
 # Loop Length Caching
 
 ## Optimization Overview
